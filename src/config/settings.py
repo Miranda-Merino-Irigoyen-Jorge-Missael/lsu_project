@@ -35,7 +35,7 @@ DRIVE_FOLDER_ID = os.getenv("DRIVE_FOLDER_ID", "1Q5dmcT7q6wx8xw6PBiKYo5kCDrfxFjd
 
 # --- Vertex AI & Gemini ---
 VERTEX_TIMEOUT_SECONDS = 350
-MODEL_NAME = "gemini-3-flash-preview"
+MODEL_NAME = "gemini-3.1-pro-preview"
 
 # ==============================================================================
 # ENRUTADOR DE CASOS (MODO PRUEBA: SÓLO VISA T)
