@@ -77,10 +77,11 @@ def analyze_case_documents(system_instruction: str, user_prompt_template: str, c
         ]
     )
     
-    # 2. Formatear el diccionario con las llaves exactas que están en Firestore
-    prompt_text = user_prompt_template.format(
-        pdf_cliente="[Ver Documento Adjunto: Notas del Cliente]",
-        pdf_formulario="[Ver Documento Adjunto: Template del Formulario]"
+# 2. Reemplazar las variables dinámicas de forma segura para no interferir con las llaves JSON
+    prompt_text = user_prompt_template.replace(
+        "{pdf_cliente}", "[Ver Documento Adjunto: Notas del Cliente]"
+    ).replace(
+        "{pdf_formulario}", "[Ver Documento Adjunto: Template del Formulario]"
     )
     
     # 3. Ensamblar los componentes (Los PDFs físicos por URI para no saturar memoria)
