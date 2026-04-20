@@ -1,6 +1,6 @@
 """
 Configuración central del proyecto LSU.
-Versión simplificada para pruebas iniciales enfocadas en VISA T.
+Versión corregida para procesamiento basado en Markdown y nuevo template.
 """
 import os
 import logging
@@ -35,14 +35,18 @@ DRIVE_FOLDER_ID = os.getenv("DRIVE_FOLDER_ID", "1Q5dmcT7q6wx8xw6PBiKYo5kCDrfxFjd
 
 # --- Vertex AI & Gemini ---
 VERTEX_TIMEOUT_SECONDS = 350
-MODEL_NAME = "gemini-3.1-pro-preview"
+# Actualizado a 1.5 Pro para mejor manejo de estructuras Markdown y documentos largos
+MODEL_NAME = "gemini-3.1-pro-preview" 
 
 # ==============================================================================
 # ENRUTADOR DE CASOS (MODO PRUEBA: SÓLO VISA T)
 # ==============================================================================
+# Se actualiza el nombre del template según tu .env: "VISA T (LSC REPORT).pdf"
+TEMPLATE_NAME = os.getenv('TEMPLATE_VISAT_NAME', 'VISA T (LSC REPORT).pdf')
+
 CASE_CONFIG = {
     "visat": {
-        "template_uri": f"gs://{GCS_BUCKET_NAME}/templates/{os.getenv('TEMPLATE_VISAT_NAME', 'template_visat.pdf')}",
+        "template_uri": f"gs://{GCS_BUCKET_NAME}/templates/{TEMPLATE_NAME}",
         "fs_system_doc": "system_instruction_visat",
         "fs_prompt_doc": "prompt_visat_pdfs"
     }

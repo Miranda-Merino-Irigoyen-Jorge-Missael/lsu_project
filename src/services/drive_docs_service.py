@@ -1,64 +1,47 @@
 import logging
-import json
+import io
 from googleapiclient.discovery import build
+from googleapiclient.http import MediaIoBaseUpload
 from src.services.auth_service import get_credentials
-
-# ID de tu plantilla que me pasaste
-TEMPLATE_ID = '1etakhSIxR6sQbGMfPzVO1CugPVBtL4RABjyedGiQRpk'
-# Carpeta donde quieres que se guarden los reportes finales (usa la misma de tus settings)
 from src.config.settings import DRIVE_FOLDER_ID
 
 logger = logging.getLogger(__name__)
 
-def generar_y_subir_documento(json_gemini: str, nombre_documento: str) -> str:
+def generar_y_subir_documento(contenido: str, nombre_documento: str) -> str:
     """
-    Toma el JSON de Gemini, clona la plantilla y reemplaza las etiquetas {{ }}.
+    Toma el contenido HTML generado por Gemini y lo sube a Drive.
+    Drive automáticamente convierte las etiquetas <b>, <h1>, etc. en formato de Google Docs.
     """
     try:
         credenciales = get_credentials()
         drive_service = build('drive', 'v3', credentials=credenciales)
-        docs_service = build('docs', 'v1', credentials=credenciales)
 
-        # 1. Limpiar el JSON (por si Gemini agregó backticks ```json)
-        json_clean = json_gemini.strip().replace('```json', '').replace('```', '')
-        datos = json.loads(json_clean)
+        # 1. Limpiar el contenido (por si Gemini pone backticks como ```html o ```markdown)
+        limpio = contenido.replace('```html', '').replace('```markdown', '').replace('```', '').strip()
 
-        # 2. Copiar la plantilla
-        copy_metadata = {
+        # 2. Metadatos: Le decimos a Drive explícitamente que lo convierta a Google Doc
+        file_metadata = {
             'name': f"REPORTE_FINAL_{nombre_documento}",
+            'mimeType': 'application/vnd.google-apps.document',
             'parents': [DRIVE_FOLDER_ID]
         }
-        documento_copiado = drive_service.files().copy(
-            fileId=TEMPLATE_ID, 
-            body=copy_metadata
+
+        # 3. Convertimos el texto a un archivo en memoria indicando que es texto HTML
+        fh = io.BytesIO(limpio.encode('utf-8'))
+        media = MediaIoBaseUpload(fh, mimetype='text/html', resumable=True)
+
+        # 4. Crear y subir el archivo a Drive
+        documento = drive_service.files().create(
+            body=file_metadata, 
+            media_body=media, 
+            fields='id'
         ).execute()
         
-        doc_id = documento_copiado.get('id')
-        logger.info(f"Copia de plantilla creada con ID: {doc_id}")
-
-        # 3. Preparar los reemplazos
-        requests = []
-        for llave, valor in datos.items():
-            requests.append({
-                'replaceAllText': {
-                    'containsText': {
-                        'text': '{{' + llave + '}}',
-                        'matchCase': True
-                    },
-                    'replaceText': str(valor)
-                }
-            })
-
-        # 4. Ejecutar todos los reemplazos de un solo golpe (Batch Update)
-        if requests:
-            docs_service.documents().batchUpdate(
-                documentId=doc_id, 
-                body={'requests': requests}
-            ).execute()
-            logger.info("Inyección de datos completada exitosamente.")
+        doc_id = documento.get('id')
+        logger.info(f"Nuevo Google Doc creado con formato nativo. ID: {doc_id}")
 
         return f"[https://docs.google.com/document/d/](https://docs.google.com/document/d/){doc_id}/edit"
 
     except Exception as e:
-        logger.error(f"Error crítico en el motor de inyección: {e}")
+        logger.error(f"Error crítico al generar el Google Doc: {e}")
         raise e
