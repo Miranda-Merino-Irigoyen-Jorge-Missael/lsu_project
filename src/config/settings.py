@@ -32,6 +32,7 @@ FIRESTORE_COLLECTION = os.getenv("FIRESTORE_COLLECTION", "prompt_LSU")
 
 # --- Google Drive ---
 DRIVE_FOLDER_ID = os.getenv("DRIVE_FOLDER_ID", "1Q5dmcT7q6wx8xw6PBiKYo5kCDrfxFjd4")
+TEMPLATE_DOC_ID = os.getenv("TEMPLATE_DOC_ID", "1etakhSIxR6sQbGMfPzVO1CugPVBtL4RABjyedGiQRpk")
 
 # --- Vertex AI & Gemini ---
 VERTEX_TIMEOUT_SECONDS = 350

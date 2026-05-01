@@ -5,7 +5,14 @@ Maneja la inyección de prompts, carga de PDFs por URI y reintentos automáticos
 import logging
 import concurrent.futures
 import vertexai
-from vertexai.generative_models import GenerativeModel, Part, SafetySetting, HarmCategory, HarmBlockThreshold
+from vertexai.generative_models import (
+    GenerativeModel, 
+    Part, 
+    SafetySetting, 
+    HarmCategory, 
+    HarmBlockThreshold,
+    GenerationConfig # <--- NUEVA IMPORTACIÓN
+)
 from tenacity import retry, wait_exponential, stop_after_attempt, retry_if_exception_type
 from google.api_core import exceptions as google_exceptions
 
@@ -64,10 +71,14 @@ def analyze_case_documents(system_instruction: str, user_prompt_template: str, c
     """
     _init_vertex()
     
-    # 1. Configurar el modelo con sus instrucciones de sistema
+    # 1. Configurar el modelo con sus instrucciones de sistema y CONFIGURACIÓN JSON
     model = GenerativeModel(
         model_name=MODEL_NAME,
         system_instruction=[system_instruction],
+        generation_config=GenerationConfig(
+            response_mime_type="application/json", # <--- OBLIGA A DEVOLVER JSON NATIVO
+            temperature=0.2 # <--- BAJA TEMPERATURA PARA MAYOR PRECISIÓN Y EVITAR ALUCINACIONES
+        ),
         # Relajamos filtros porque los testimonios legales pueden contener lenguaje sensible
         safety_settings=[
             SafetySetting(category=HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold=HarmBlockThreshold.BLOCK_NONE),
@@ -77,7 +88,7 @@ def analyze_case_documents(system_instruction: str, user_prompt_template: str, c
         ]
     )
     
-# 2. Reemplazar las variables dinámicas de forma segura para no interferir con las llaves JSON
+    # 2. Reemplazar las variables dinámicas de forma segura
     prompt_text = user_prompt_template.replace(
         "{pdf_cliente}", "[Ver Documento Adjunto: Notas del Cliente]"
     ).replace(
@@ -96,6 +107,6 @@ def analyze_case_documents(system_instruction: str, user_prompt_template: str, c
     
     # 4. Ejecutar con reintentos
     resultado = _call_gemini_with_retry(model, contents)
-    logger.info("¡Análisis de Gemini completado con éxito!")
+    logger.info("¡Análisis de Gemini completado con éxito! Se obtuvo un JSON válido.")
     
     return resultado

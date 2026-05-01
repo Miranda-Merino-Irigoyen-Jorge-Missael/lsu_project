@@ -1,47 +1,75 @@
 import logging
-import io
+import json
 from googleapiclient.discovery import build
-from googleapiclient.http import MediaIoBaseUpload
 from src.services.auth_service import get_credentials
-from src.config.settings import DRIVE_FOLDER_ID
+from src.config.settings import DRIVE_FOLDER_ID, TEMPLATE_DOC_ID
 
 logger = logging.getLogger(__name__)
 
-def generar_y_subir_documento(contenido: str, nombre_documento: str) -> str:
+def generar_y_subir_documento(json_content: str, nombre_documento: str) -> str:
     """
-    Toma el contenido HTML generado por Gemini y lo sube a Drive.
-    Drive automáticamente convierte las etiquetas <b>, <h1>, etc. en formato de Google Docs.
+    Toma el JSON generado por Gemini, clona el template de Google Docs
+    y reemplaza las etiquetas con los datos extraídos manteniendo el formato.
     """
     try:
         credenciales = get_credentials()
+        # Necesitamos ambos servicios: Drive (para copiar) y Docs (para editar)
         drive_service = build('drive', 'v3', credentials=credenciales)
+        docs_service = build('docs', 'v1', credentials=credenciales)
 
-        # 1. Limpiar el contenido (por si Gemini pone backticks como ```html o ```markdown)
-        limpio = contenido.replace('```html', '').replace('```markdown', '').replace('```', '').strip()
+        # 1. Parsear el JSON devuelto por Gemini
+        # Limpiamos los backticks por si el modelo los incluyó como markdown
+        limpio = json_content.replace('```json', '').replace('```', '').strip()
+        datos = json.loads(limpio)
 
-        # 2. Metadatos: Le decimos a Drive explícitamente que lo convierta a Google Doc
-        file_metadata = {
+        # 2. Copiar el Template de Google Docs
+        body = {
             'name': f"REPORTE_FINAL_{nombre_documento}",
-            'mimeType': 'application/vnd.google-apps.document',
             'parents': [DRIVE_FOLDER_ID]
         }
-
-        # 3. Convertimos el texto a un archivo en memoria indicando que es texto HTML
-        fh = io.BytesIO(limpio.encode('utf-8'))
-        media = MediaIoBaseUpload(fh, mimetype='text/html', resumable=True)
-
-        # 4. Crear y subir el archivo a Drive
-        documento = drive_service.files().create(
-            body=file_metadata, 
-            media_body=media, 
-            fields='id'
+        
+        copia = drive_service.files().copy(
+            fileId=TEMPLATE_DOC_ID, 
+            body=body
         ).execute()
         
-        doc_id = documento.get('id')
-        logger.info(f"Nuevo Google Doc creado con formato nativo. ID: {doc_id}")
+        nuevo_doc_id = copia.get('id')
+        logger.info(f"Template copiado exitosamente. ID: {nuevo_doc_id}")
 
-        return f"[https://docs.google.com/document/d/](https://docs.google.com/document/d/){doc_id}/edit"
+        # 3. Preparar los reemplazos masivos (Batch Update)
+        requests = []
+        for llave, valor in datos.items():
+            # Construimos la etiqueta exacta que está en el Doc: {{LLAVE}}
+            etiqueta = f"{{{{{llave}}}}}" 
+            
+            # Aseguramos que el valor sea un string
+            valor_str = str(valor) if valor is not None else ""
+            
+            requests.append({
+                'replaceAllText': {
+                    'containsText': {
+                        'text': etiqueta,
+                        'matchCase': True
+                    },
+                    'replaceText': valor_str
+                }
+            })
 
+        # 4. Inyectar los datos en el documento copiado
+        if requests:
+            docs_service.documents().batchUpdate(
+                documentId=nuevo_doc_id,
+                body={'requests': requests}
+            ).execute()
+            
+        logger.info("Inyección de datos completada respetando el formato original.")
+
+        return f"https://docs.google.com/document/d/{nuevo_doc_id}/edit"
+
+    except json.JSONDecodeError as e:
+        logger.error(f"Error al decodificar el JSON de Gemini: {e}")
+        logger.error(f"Contenido crudo: {json_content}")
+        raise e
     except Exception as e:
-        logger.error(f"Error crítico al generar el Google Doc: {e}")
+        logger.error(f"Error crítico al clonar/editar el Google Doc: {e}")
         raise e
