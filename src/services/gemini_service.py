@@ -1,6 +1,6 @@
 """
 Servicio de Vertex AI (Gemini).
-Maneja la inyección de prompts, carga de PDFs por URI y reintentos automáticos.
+Maneja la inyección de prompts, carga de contexto en JSON y reintentos automáticos.
 """
 import logging
 import concurrent.futures
@@ -11,7 +11,7 @@ from vertexai.generative_models import (
     SafetySetting, 
     HarmCategory, 
     HarmBlockThreshold,
-    GenerationConfig # <--- NUEVA IMPORTACIÓN
+    GenerationConfig
 )
 from tenacity import retry, wait_exponential, stop_after_attempt, retry_if_exception_type
 from google.api_core import exceptions as google_exceptions
@@ -65,9 +65,9 @@ def _call_gemini_with_retry(model: GenerativeModel, contents: list) -> str:
         # Limpiamos el hilo para no saturar la memoria
         executor.shutdown(wait=False)
 
-def analyze_case_documents(system_instruction: str, user_prompt_template: str, client_pdf_uri: str, form_pdf_uri: str) -> str:
+def analyze_case_documents(system_instruction: str, user_prompt_template: str, client_notes_json: str, form_pdf_uri: str = None) -> str:
     """
-    Inyecta las URIs en el prompt, ensambla los documentos y llama a Gemini.
+    Inyecta el texto JSON en el prompt, ensambla el documento de formulario opcional y llama a Gemini.
     """
     _init_vertex()
     
@@ -76,8 +76,8 @@ def analyze_case_documents(system_instruction: str, user_prompt_template: str, c
         model_name=MODEL_NAME,
         system_instruction=[system_instruction],
         generation_config=GenerationConfig(
-            response_mime_type="application/json", # <--- OBLIGA A DEVOLVER JSON NATIVO
-            temperature=0.2 # <--- BAJA TEMPERATURA PARA MAYOR PRECISIÓN Y EVITAR ALUCINACIONES
+            response_mime_type="application/json", # OBLIGA A DEVOLVER JSON NATIVO
+            temperature=0.2 # BAJA TEMPERATURA PARA MAYOR PRECISIÓN Y EVITAR ALUCINACIONES
         ),
         # Relajamos filtros porque los testimonios legales pueden contener lenguaje sensible
         safety_settings=[
@@ -89,21 +89,26 @@ def analyze_case_documents(system_instruction: str, user_prompt_template: str, c
     )
     
     # 2. Reemplazar las variables dinámicas de forma segura
+    # Aquí inyectamos todo el texto del JSON extraído en el lugar de {pdf_cliente}
     prompt_text = user_prompt_template.replace(
-        "{pdf_cliente}", "[Ver Documento Adjunto: Notas del Cliente]"
-    ).replace(
-        "{pdf_formulario}", "[Ver Documento Adjunto: Template del Formulario]"
+        "{pdf_cliente}", client_notes_json
     )
     
-    # 3. Ensamblar los componentes (Los PDFs físicos por URI para no saturar memoria)
-    part_cliente = Part.from_uri(uri=client_pdf_uri, mime_type="application/pdf")
-    part_formulario = Part.from_uri(uri=form_pdf_uri, mime_type="application/pdf")
+    # Si aún se manda un template en PDF
+    if form_pdf_uri:
+        prompt_text = prompt_text.replace(
+            "{pdf_formulario}", "[Ver Documento Adjunto: Template del Formulario]"
+        )
+    else:
+        prompt_text = prompt_text.replace("{pdf_formulario}", "")
     
-    contents = [
-        part_cliente,
-        part_formulario,
-        prompt_text
-    ]
+    # 3. Ensamblar los componentes
+    contents = [prompt_text]
+    
+    # Agregamos el PDF del formulario solo si existe
+    if form_pdf_uri:
+        part_formulario = Part.from_uri(uri=form_pdf_uri, mime_type="application/pdf")
+        contents.append(part_formulario)
     
     # 4. Ejecutar con reintentos
     resultado = _call_gemini_with_retry(model, contents)

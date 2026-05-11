@@ -18,7 +18,7 @@ def generar_y_subir_documento(json_content: str, nombre_documento: str) -> str:
         docs_service = build('docs', 'v1', credentials=credenciales)
 
         # 1. Parsear el JSON devuelto por Gemini
-        # Limpiamos los backticks por si el modelo los incluyó como markdown
+        # Limpiamos los backticks por si el modelo los incluyó como markdown a pesar de config
         limpio = json_content.replace('```json', '').replace('```', '').strip()
         datos = json.loads(limpio)
 
@@ -42,8 +42,14 @@ def generar_y_subir_documento(json_content: str, nombre_documento: str) -> str:
             # Construimos la etiqueta exacta que está en el Doc: {{LLAVE}}
             etiqueta = f"{{{{{llave}}}}}" 
             
-            # Aseguramos que el valor sea un string
-            valor_str = str(valor) if valor is not None else ""
+            # Prevenimos errores si Gemini decide devolver una lista en lugar de un string
+            if isinstance(valor, list):
+                valor_str = ", ".join([str(v) for v in valor])
+            elif isinstance(valor, dict):
+                # Por si devuelve un sub-objeto anidado
+                valor_str = json.dumps(valor, ensure_ascii=False)
+            else:
+                valor_str = str(valor) if valor is not None else "No proporcionado"
             
             requests.append({
                 'replaceAllText': {
@@ -64,7 +70,7 @@ def generar_y_subir_documento(json_content: str, nombre_documento: str) -> str:
             
         logger.info("Inyección de datos completada respetando el formato original.")
 
-        return f"https://docs.google.com/document/d/{nuevo_doc_id}/edit"
+        return f"[https://docs.google.com/document/d/](https://docs.google.com/document/d/){nuevo_doc_id}/edit"
 
     except json.JSONDecodeError as e:
         logger.error(f"Error al decodificar el JSON de Gemini: {e}")

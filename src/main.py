@@ -1,11 +1,11 @@
 """
 Orquestador Principal del Proyecto LSU.
-Lee los PDFs locales, clasifica por nombre, procesa con Gemini y genera Google Docs.
+Lee los archivos JSON locales, extrae las notas, clasifica por nombre, procesa con Gemini y genera Google Docs.
 """
 import os
+import json
 import logging
 from src.config.settings import LOCAL_PDF_DIR, CASE_CONFIG
-from src.services.storage_service import upload_pdf_to_gcs
 from src.services.firestore_service import get_prompts_from_firestore
 from src.services.gemini_service import analyze_case_documents
 from src.services.drive_docs_service import generar_y_subir_documento
@@ -27,19 +27,21 @@ def clasificar_archivo(nombre_archivo: str) -> str:
 
 def procesar_lote():
     """
-    Lee la carpeta local y procesa cada PDF válido.
+    Lee la carpeta local y procesa cada archivo JSON válido.
     """
+    # Nota: Se mantiene LOCAL_PDF_DIR de settings.py por compatibilidad, pero ahora busca JSONs. 
+    # Te sugiero renombrarla a LOCAL_INPUT_DIR en tus settings en el futuro.
     if not os.path.exists(LOCAL_PDF_DIR):
         logger.error(f"CRÍTICO: El directorio local no existe: {LOCAL_PDF_DIR}")
         return
 
-    archivos = [f for f in os.listdir(LOCAL_PDF_DIR) if f.lower().endswith('.pdf')]
+    archivos = [f for f in os.listdir(LOCAL_PDF_DIR) if f.lower().endswith('.json')]
     
     if not archivos:
-        logger.warning(f"No se encontraron archivos PDF en la ruta: {LOCAL_PDF_DIR}")
+        logger.warning(f"No se encontraron archivos JSON en la ruta: {LOCAL_PDF_DIR}")
         return
 
-    logger.info(f"Se encontraron {len(archivos)} PDFs en la carpeta local. Evaluando...")
+    logger.info(f"Se encontraron {len(archivos)} JSONs en la carpeta local. Evaluando...")
 
     for archivo in archivos:
         logger.info(f"\n--- Evaluando documento: {archivo} ---")
@@ -56,8 +58,21 @@ def procesar_lote():
         try:
             logger.info(f"Clasificado como: {tipo_caso.upper()}")
             
-            # 2. Subir PDF del cliente a Google Cloud Storage
-            uri_cliente = upload_pdf_to_gcs(ruta_local, destination_folder=f"clientes_{tipo_caso}")
+            # 2. Leer JSON y extraer notas
+            with open(ruta_local, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            
+            texto_notas_procesado = ""
+            if "notes" in data and isinstance(data["notes"], list):
+                logger.info(f"Extrayendo {len(data['notes'])} notas del JSON...")
+                for index, note in enumerate(data["notes"], start=1):
+                    subject = note.get("subject", "Sin asunto")
+                    body = note.get("body", "Sin contenido")
+                    # Concatenamos cada nota en un formato legible para Gemini
+                    texto_notas_procesado += f"--- NOTA {index} ---\nASUNTO: {subject}\nCONTENIDO:\n{body}\n\n"
+            else:
+                logger.warning(f"Saltando '{archivo}': No se encontró el arreglo 'notes' en el JSON.")
+                continue
             
             # 3. Descargar las instrucciones desde Firestore
             sys_inst, usr_prompt = get_prompts_from_firestore(
@@ -65,16 +80,16 @@ def procesar_lote():
                 config["fs_prompt_doc"]
             )
             
-            # 4. Enviar a Gemini (Vertex AI) cruzando con el template correcto
+            # 4. Enviar a Gemini (Vertex AI) pasando el texto extraído
             texto_resultado = analyze_case_documents(
                 system_instruction=sys_inst,
                 user_prompt_template=usr_prompt,
-                client_pdf_uri=uri_cliente,
+                client_notes_json=texto_notas_procesado,
                 form_pdf_uri=config["template_uri"]
             )
             
             # 5. Generar Google Doc en Drive
-            # Quitamos la extensión .pdf para nombrar el Google Doc de forma limpia
+            # Quitamos la extensión .json para nombrar el Google Doc de forma limpia
             nombre_base = os.path.splitext(archivo)[0]
             nombre_doc_final = f"LSC REPORT AI_{nombre_base}"
             
@@ -82,7 +97,7 @@ def procesar_lote():
             logger.info(f"=== ÉXITO: Caso completado. Link del documento: {link_drive} ===")
             
         except Exception as e:
-            # Si un documento falla, capturamos el error pero el loop continúa con el siguiente PDF
+            # Si un documento falla, capturamos el error pero el loop continúa con el siguiente JSON
             logger.error(f"❌ Error crítico al procesar '{archivo}': {str(e)}")
             continue
 
