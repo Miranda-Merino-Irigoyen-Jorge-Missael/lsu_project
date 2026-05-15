@@ -32,27 +32,41 @@ FIRESTORE_COLLECTION = os.getenv("FIRESTORE_COLLECTION", "prompt_LSU")
 
 # --- Google Drive ---
 DRIVE_FOLDER_ID = os.getenv("DRIVE_FOLDER_ID", "1Q5dmcT7q6wx8xw6PBiKYo5kCDrfxFjd4")
-TEMPLATE_DOC_ID = os.getenv("TEMPLATE_DOC_ID", "1etakhSIxR6sQbGMfPzVO1CugPVBtL4RABjyedGiQRpk")
+
+# IDs de los Templates de Google Docs extraídos del .env
+TEMPLATE_VISAT_ID = os.getenv("TEMPLATE_DOC_ID") # Aquí leemos el ID original de Visa T
+TEMPLATE_VAWAAOS_ID = os.getenv("TEMPLATE_VAWAAOS_ID")
 
 # --- Vertex AI & Gemini ---
 VERTEX_TIMEOUT_SECONDS = 350
-# Actualizado a 1.5 Pro para mejor manejo de estructuras Markdown y documentos largos
+# Se utiliza la versión 1.5 Pro para el procesamiento de documentos legales
 MODEL_NAME = "gemini-3.1-pro-preview" 
 
 # ==============================================================================
-# ENRUTADOR DE CASOS (MODO PRUEBA: SÓLO VISA T)
+# ENRUTADOR DE CASOS
 # ==============================================================================
-# Se actualiza el nombre del template según tu .env: "VISA T (LSC REPORT).pdf"
-TEMPLATE_NAME = os.getenv('TEMPLATE_VISAT_NAME', 'VISA T (LSC REPORT).pdf')
+# Definición de archivos para GCS y mapeo de IDs de Google Drive
+TEMPLATE_VISAT_FILE = os.getenv('TEMPLATE_VISAT_NAME', 'VISA T (LSC REPORT).pdf')
+TEMPLATE_VAWAAOS_FILE = os.getenv('TEMPLATE_VAWAAOS_NAME', 'VAWA AOS (LSC REPORT).pdf')
 
 CASE_CONFIG = {
     "visat": {
-        "template_uri": f"gs://{GCS_BUCKET_NAME}/templates/{TEMPLATE_NAME}",
+        "template_uri": f"gs://{GCS_BUCKET_NAME}/templates/{TEMPLATE_VISAT_FILE}",
+        "template_doc_id": TEMPLATE_VISAT_ID,
         "fs_system_doc": "system_instruction_visat",
         "fs_prompt_doc": "prompt_visat_pdfs"
+    },
+    "vawaaos": {
+        "template_uri": f"gs://{GCS_BUCKET_NAME}/templates/{TEMPLATE_VAWAAOS_FILE}",
+        "template_doc_id": TEMPLATE_VAWAAOS_ID,
+        "fs_system_doc": "system_instruction_vawaaos",
+        "fs_prompt_doc": "prompt_vawaaos_pdfs"
     }
 }
 
 # Validación de seguridad de arranque
 if not os.getenv("GOOGLE_APPLICATION_CREDENTIALS"):
     raise ValueError("ERROR CRÍTICO: No se encontró la ruta de GOOGLE_APPLICATION_CREDENTIALS en el .env")
+
+if not TEMPLATE_VISAT_ID or not TEMPLATE_VAWAAOS_ID:
+    logging.warning("ADVERTENCIA: Algunos IDs de templates de Google Drive no están definidos en el .env")

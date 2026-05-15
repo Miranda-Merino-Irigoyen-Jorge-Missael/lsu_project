@@ -30,7 +30,6 @@ def procesar_lote():
     Lee la carpeta local y procesa cada archivo JSON válido.
     """
     # Nota: Se mantiene LOCAL_PDF_DIR de settings.py por compatibilidad, pero ahora busca JSONs. 
-    # Te sugiero renombrarla a LOCAL_INPUT_DIR en tus settings en el futuro.
     if not os.path.exists(LOCAL_PDF_DIR):
         logger.error(f"CRÍTICO: El directorio local no existe: {LOCAL_PDF_DIR}")
         return
@@ -93,7 +92,13 @@ def procesar_lote():
             nombre_base = os.path.splitext(archivo)[0]
             nombre_doc_final = f"LSC REPORT AI_{nombre_base}"
             
-            link_drive = generar_y_subir_documento(texto_resultado, nombre_doc_final)
+            # --- AQUÍ ESTÁ EL CAMBIO PRINCIPAL ---
+            # Ahora le pasamos dinámicamente el ID del template que sacamos de la configuración
+            link_drive = generar_y_subir_documento(
+                json_content=texto_resultado, 
+                nombre_documento=nombre_doc_final, 
+                template_doc_id=config["template_doc_id"]
+            )
             logger.info(f"=== ÉXITO: Caso completado. Link del documento: {link_drive} ===")
             
         except Exception as e:

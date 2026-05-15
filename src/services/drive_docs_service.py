@@ -2,13 +2,13 @@ import logging
 import json
 from googleapiclient.discovery import build
 from src.services.auth_service import get_credentials
-from src.config.settings import DRIVE_FOLDER_ID, TEMPLATE_DOC_ID
+from src.config.settings import DRIVE_FOLDER_ID
 
 logger = logging.getLogger(__name__)
 
-def generar_y_subir_documento(json_content: str, nombre_documento: str) -> str:
+def generar_y_subir_documento(json_content: str, nombre_documento: str, template_doc_id: str) -> str:
     """
-    Toma el JSON generado por Gemini, clona el template de Google Docs
+    Toma el JSON generado por Gemini, clona el template de Google Docs especificado (template_doc_id)
     y reemplaza las etiquetas con los datos extraídos manteniendo el formato.
     """
     try:
@@ -29,7 +29,7 @@ def generar_y_subir_documento(json_content: str, nombre_documento: str) -> str:
         }
         
         copia = drive_service.files().copy(
-            fileId=TEMPLATE_DOC_ID, 
+            fileId=template_doc_id, 
             body=body
         ).execute()
         
@@ -68,9 +68,9 @@ def generar_y_subir_documento(json_content: str, nombre_documento: str) -> str:
                 body={'requests': requests}
             ).execute()
             
-        logger.info("Inyección de datos completada respetando el formato original.")
+            logger.info("Inyección de datos completada respetando el formato original.")
 
-        return f"[https://docs.google.com/document/d/](https://docs.google.com/document/d/){nuevo_doc_id}/edit"
+        return f"https://docs.google.com/document/d/{nuevo_doc_id}/edit"
 
     except json.JSONDecodeError as e:
         logger.error(f"Error al decodificar el JSON de Gemini: {e}")
