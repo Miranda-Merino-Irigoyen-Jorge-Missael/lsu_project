@@ -1,6 +1,6 @@
 """
 Configuración central del proyecto LSU.
-Versión corregida para procesamiento basado en Markdown y nuevo template.
+Versión corregida para procesamiento basado en Markdown, nuevo template y Sheets.
 """
 import os
 import logging
@@ -31,21 +31,25 @@ LOCAL_PDF_DIR = os.getenv("LOCAL_PDF_DIR", r"C:\Users\missa\OneDrive\Documentos\
 FIRESTORE_COLLECTION = os.getenv("FIRESTORE_COLLECTION", "prompt_LSU")
 
 # --- Google Drive ---
-DRIVE_FOLDER_ID = os.getenv("DRIVE_FOLDER_ID", "1Q5dmcT7q6wx8xw6PBiKYo5kCDrfxFjd4")
+# Actualizado con el ID de la nueva carpeta del Workspace
+DRIVE_FOLDER_ID = os.getenv("DRIVE_FOLDER_ID", "1AdG_BmzrVivhtAyAYhN_WfnlAO4PobiT")
+
+# --- Google Sheets ---
+# IDs para lectura y escritura de base de datos
+SPREADSHEET_ID = os.getenv("SPREADSHEET_ID", "1tCxLAc5fLsYn2NqyRJq4anzrXOgAyLuVzqKVhlh-Of8")
+SHEET_NAME = os.getenv("SHEET_NAME", "procesar")
 
 # IDs de los Templates de Google Docs extraídos del .env
-TEMPLATE_VISAT_ID = os.getenv("TEMPLATE_DOC_ID") # Aquí leemos el ID original de Visa T
+TEMPLATE_VISAT_ID = os.getenv("TEMPLATE_DOC_ID")
 TEMPLATE_VAWAAOS_ID = os.getenv("TEMPLATE_VAWAAOS_ID")
 
 # --- Vertex AI & Gemini ---
 VERTEX_TIMEOUT_SECONDS = 350
-# Se utiliza la versión 1.5 Pro para el procesamiento de documentos legales
 MODEL_NAME = "gemini-3.1-pro-preview" 
 
 # ==============================================================================
 # ENRUTADOR DE CASOS
 # ==============================================================================
-# Definición de archivos para GCS y mapeo de IDs de Google Drive
 TEMPLATE_VISAT_FILE = os.getenv('TEMPLATE_VISAT_NAME', 'VISA T (LSC REPORT).pdf')
 TEMPLATE_VAWAAOS_FILE = os.getenv('TEMPLATE_VAWAAOS_NAME', 'VAWA AOS (LSC REPORT).pdf')
 

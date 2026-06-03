@@ -2,13 +2,13 @@ import os
 import logging
 from google.oauth2.credentials import Credentials
 from google.auth.transport.requests import Request
-from google_auth_oauthlib.flow import InstalledAppFlow
 
 logger = logging.getLogger(__name__)
 
-# Definimos los alcances (Scopes) para Drive, Firestore y Vertex AI
+# Definimos los alcances (Scopes) requeridos, agregando el de Spreadsheets
 SCOPES = [
     'https://www.googleapis.com/auth/drive',
+    'https://www.googleapis.com/auth/spreadsheets',
     'https://www.googleapis.com/auth/cloud-platform'
 ]
 
@@ -24,7 +24,11 @@ def get_credentials():
     if not creds or not creds.valid:
         if creds and creds.expired and creds.refresh_token:
             logger.info("Refrescando token de acceso expirado...")
-            creds.refresh(Request())
+            try:
+                creds.refresh(Request())
+            except Exception as e:
+                logger.error(f"Error al refrescar el token: {e}")
+                raise Exception("Requiere re-autenticación. Elimina token.json y ejecuta generar_token.py")
         else:
             logger.error("Token no válido o inexistente. Ejecuta generar_token.py")
             raise Exception("Requiere re-autenticación con generar_token.py")
