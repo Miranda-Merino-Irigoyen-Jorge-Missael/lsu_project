@@ -39,7 +39,7 @@ def obtener_casos_pendientes() -> list:
                         "id_cliente": row[0].strip() if len(row) > 0 else "SIN_ID",
                         "nombre_cliente": row[1].strip() if len(row) > 1 else "SIN_NOMBRE",
                         "tipo_visa": row[2].strip() if len(row) > 2 else "",
-                        "json_link": row[5].strip() if len(row) > 5 else ""
+                        "pdf_link": row[5].strip() if len(row) > 5 else ""
                     }
                     casos_pendientes.append(caso)
                     

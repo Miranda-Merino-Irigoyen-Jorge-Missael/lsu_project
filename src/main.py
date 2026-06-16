@@ -3,7 +3,6 @@ Orquestador Principal del Proyecto LSU.
 Se conecta a Google Sheets, identifica casos pendientes, descarga los JSONs de Drive,
 procesa la información con Gemini y genera los Google Docs correspondientes.
 """
-import json
 import logging
 import re
 from googleapiclient.discovery import build
@@ -30,29 +29,48 @@ def clasificar_caso(tipo_visa_str: str) -> str:
         return "visat"
     return None
 
-def descargar_json_drive(drive_link: str) -> dict:
+def descargar_archivo_drive(drive_link: str) -> tuple:
     """
-    Extrae el ID del archivo de un link de Google Drive y descarga su contenido JSON.
+    Extrae el ID del archivo de un link de Google Drive, detecta si es PDF o JSON
+    y devuelve una tupla (contenido, mime_type).
+    - PDF  → (bytes, "application/pdf")
+    - JSON → (str,   "application/json")
     """
     # Extraemos el ID del link (ej. https://drive.google.com/file/d/ID_DEL_ARCHIVO/view...)
     match = re.search(r'/d/([a-zA-Z0-9_-]+)', drive_link)
     if not match:
         # Alternativa por si el formato es ?id=...
         match = re.search(r'id=([a-zA-Z0-9_-]+)', drive_link)
-        
+
     if not match:
         raise ValueError(f"No se pudo extraer el ID del archivo desde el link: {drive_link}")
-        
+
     file_id = match.group(1)
-    logger.info(f"Descargando JSON con ID de Drive: {file_id}")
-    
+
     creds = get_credentials()
     drive_service = build('drive', 'v3', credentials=creds)
-    
-    request = drive_service.files().get_media(fileId=file_id)
-    file_content = request.execute()
-    
-    return json.loads(file_content.decode('utf-8'))
+
+    # Consultamos el MIME type real del archivo en Drive
+    metadata = drive_service.files().get(fileId=file_id, fields='mimeType,name').execute()
+    mime_type = metadata.get('mimeType', '')
+    file_name = metadata.get('name', file_id)
+    logger.info(f"Archivo detectado en Drive: '{file_name}' | MIME: {mime_type}")
+
+    raw_bytes = drive_service.files().get_media(fileId=file_id).execute()
+
+    if 'pdf' in mime_type:
+        logger.info(f"Descargando como PDF ({len(raw_bytes)} bytes).")
+        return raw_bytes, "application/pdf"
+    elif 'json' in mime_type or mime_type in ('text/plain', 'application/octet-stream'):
+        # Los archivos .json subidos manualmente a Drive pueden quedar como text/plain
+        content_str = raw_bytes.decode('utf-8')
+        logger.info(f"Descargando como JSON ({len(content_str)} chars).")
+        return content_str, "application/json"
+    else:
+        raise ValueError(
+            f"Tipo de archivo no soportado en Drive: '{mime_type}'. "
+            "Solo se aceptan archivos PDF o JSON."
+        )
 
 def procesar_lote():
     """
@@ -69,50 +87,41 @@ def procesar_lote():
         id_cliente = caso["id_cliente"]
         nombre_cliente = caso["nombre_cliente"]
         tipo_visa = caso["tipo_visa"]
-        link_json = caso["json_link"]
-        
+        pdf_link = caso["pdf_link"]
+
         logger.info(f"\n--- Evaluando caso fila {fila}: {id_cliente} - {nombre_cliente} ---")
-        
+
         try:
             # 1. Clasificación
             tipo_caso = clasificar_caso(tipo_visa)
             if not tipo_caso:
                 raise ValueError(f"Tipo de visa no reconocido o no soportado: '{tipo_visa}'.")
-                
+
             config = CASE_CONFIG.get(tipo_caso)
             if not config:
                 raise ValueError(f"Configuración no encontrada para el tipo de caso: '{tipo_caso}'.")
-            
+
             logger.info(f"Clasificado como: {tipo_caso.upper()}")
-            
-            # 2. Descargar y parsear JSON desde Google Drive
-            if not link_json:
-                raise ValueError("La celda del link al JSON está vacía.")
-                
-            data = descargar_json_drive(link_json)
-            
-            # 3. Extraer notas
-            texto_notas_procesado = ""
-            if "notes" in data and isinstance(data["notes"], list):
-                logger.info(f"Extrayendo {len(data['notes'])} notas del JSON descargado...")
-                for index, note in enumerate(data["notes"], start=1):
-                    subject = note.get("subject", "Sin asunto")
-                    body = note.get("body", "Sin contenido")
-                    texto_notas_procesado += f"--- NOTA {index} ---\nASUNTO: {subject}\nCONTENIDO:\n{body}\n\n"
-            else:
-                raise ValueError("No se encontró el arreglo 'notes' en el JSON descargado.")
-            
-            # 4. Descargar las instrucciones desde Firestore
+
+            # 2. Descargar el archivo del cliente desde Google Drive (PDF o JSON)
+            if not pdf_link:
+                raise ValueError("La celda del link al archivo del cliente está vacía.")
+
+            client_content, client_mime_type = descargar_archivo_drive(pdf_link)
+            logger.info(f"Archivo del cliente descargado exitosamente (tipo: {client_mime_type}).")
+
+            # 3. Descargar las instrucciones desde Firestore
             sys_inst, usr_prompt = get_prompts_from_firestore(
-                config["fs_system_doc"], 
+                config["fs_system_doc"],
                 config["fs_prompt_doc"]
             )
-            
-            # 5. Enviar a Gemini (Vertex AI) pasando el texto extraído
+
+            # 4. Enviar a Gemini (Vertex AI) pasando el archivo del cliente
             texto_resultado = analyze_case_documents(
                 system_instruction=sys_inst,
                 user_prompt_template=usr_prompt,
-                client_notes_json=texto_notas_procesado,
+                client_content=client_content,
+                client_mime_type=client_mime_type,
                 form_pdf_uri=config["template_uri"]
             )
             

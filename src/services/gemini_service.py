@@ -65,12 +65,15 @@ def _call_gemini_with_retry(model: GenerativeModel, contents: list) -> str:
         # Limpiamos el hilo para no saturar la memoria
         executor.shutdown(wait=False)
 
-def analyze_case_documents(system_instruction: str, user_prompt_template: str, client_notes_json: str, form_pdf_uri: str = None) -> str:
+def analyze_case_documents(system_instruction: str, user_prompt_template: str, client_content, client_mime_type: str, form_pdf_uri: str = None) -> str:
     """
-    Inyecta el texto JSON en el prompt, ensambla el documento de formulario opcional y llama a Gemini.
+    Adjunta el documento del cliente (PDF o JSON) como parte del contenido,
+    ensambla el documento de formulario opcional y llama a Gemini.
+    - Si client_mime_type == "application/pdf"  → se envía como Part binario.
+    - Si client_mime_type == "application/json" → se incrusta el texto JSON en el prompt.
     """
     _init_vertex()
-    
+
     # 1. Configurar el modelo con sus instrucciones de sistema y CONFIGURACIÓN JSON
     model = GenerativeModel(
         model_name=MODEL_NAME,
@@ -87,31 +90,41 @@ def analyze_case_documents(system_instruction: str, user_prompt_template: str, c
             SafetySetting(category=HarmCategory.HARM_CATEGORY_HARASSMENT, threshold=HarmBlockThreshold.BLOCK_NONE),
         ]
     )
-    
-    # 2. Reemplazar las variables dinámicas de forma segura
-    # Aquí inyectamos todo el texto del JSON extraído en el lugar de {pdf_cliente}
-    prompt_text = user_prompt_template.replace(
-        "{pdf_cliente}", client_notes_json
-    )
-    
-    # Si aún se manda un template en PDF
+
+    # 2. Construir el prompt base reemplazando variables dinámicas
+    if client_mime_type == "application/pdf":
+        prompt_text = user_prompt_template.replace(
+            "{pdf_cliente}", "[Ver Documento Adjunto: PDF del Cliente]"
+        )
+    else:
+        # JSON: incrustamos el contenido directamente en el prompt como texto
+        json_block = f"\n\n[DOCUMENTO DEL CLIENTE - JSON]:\n{client_content}\n[FIN DEL DOCUMENTO]"
+        prompt_text = user_prompt_template.replace(
+            "{pdf_cliente}", json_block
+        )
+
     if form_pdf_uri:
         prompt_text = prompt_text.replace(
             "{pdf_formulario}", "[Ver Documento Adjunto: Template del Formulario]"
         )
     else:
         prompt_text = prompt_text.replace("{pdf_formulario}", "")
-    
-    # 3. Ensamblar los componentes
-    contents = [prompt_text]
-    
+
+    # 3. Ensamblar los componentes del contenido
+    if client_mime_type == "application/pdf":
+        part_cliente = Part.from_data(data=client_content, mime_type="application/pdf")
+        contents = [part_cliente, prompt_text]
+    else:
+        # Para JSON solo enviamos el prompt (el JSON ya está incrustado en el texto)
+        contents = [prompt_text]
+
     # Agregamos el PDF del formulario solo si existe
     if form_pdf_uri:
         part_formulario = Part.from_uri(uri=form_pdf_uri, mime_type="application/pdf")
         contents.append(part_formulario)
-    
+
     # 4. Ejecutar con reintentos
     resultado = _call_gemini_with_retry(model, contents)
     logger.info("¡Análisis de Gemini completado con éxito! Se obtuvo un JSON válido.")
-    
+
     return resultado
